@@ -212,7 +212,7 @@ QwenCLI/
 
 <div align="center">
 
-**Made with ❤️ by 楠哥**
+**Made with ❤️ by 奶茶叔叔**
 
 如果这个项目对你有帮助，请给一个 ⭐ Star 支持一下！
 
