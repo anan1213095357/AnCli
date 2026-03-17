@@ -148,7 +148,7 @@ v1.5.0 | 千问跨平台运维工具 | by 奶茶叔叔
 
 ```
 QwenCLI/
-├── QwenCLI.csproj              # 项目配置文件
+├── QwenCLI.csproj            # 项目配置文件
 ├── Program.cs                # 主程序入口
 ├── README.md                 # 项目说明文档
 ├── .gitignore                # Git 忽略规则
