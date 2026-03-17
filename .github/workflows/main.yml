@@ -11,40 +11,35 @@ permissions:
 
 jobs:
   build-and-release:
-    # 根据矩阵自动分配到不同的操作系统服务器
     runs-on: ${{ matrix.os }}
     strategy:
-      fail-fast: false # 哪怕某个平台失败，其他平台继续打包
+      fail-fast: false
       matrix:
         include:
-          # --- Windows 系列 (使用 Windows 服务器) ---
           - rid: win-x64
             os: windows-latest
             ext: zip
-          - rid: win-x86        # 32 位 Windows
+          - rid: win-x86
             os: windows-latest
             ext: zip
           - rid: win-arm64
             os: windows-latest
             ext: zip
-          
-          # --- Linux 系列 (使用 Ubuntu 服务器) ---
           - rid: linux-x64
+            os: ubuntu-latest
+            ext: tar.gz
+          - rid: linux-arm
             os: ubuntu-latest
             ext: tar.gz
           - rid: linux-arm64
             os: ubuntu-latest
             ext: tar.gz
-          
-          # --- macOS 系列 (苹果已彻底淘汰 32 位，只保留 64 和 ARM) ---
           - rid: osx-x64
-            os: macos-13        # Intel 架构服务器
+            os: macos-13
             ext: tar.gz
           - rid: osx-arm64
-            os: macos-14        # 苹果 M 系芯片 (ARM64) 服务器
+            os: macos-14
             ext: tar.gz
-
-          # 注：.NET AOT 目前对 Linux 32位 ARM (linux-arm) 支持极度受限且极易在运行时崩溃，为了保证发布质量，此处暂不构建 linux-arm AOT。
 
     steps:
     - name: Checkout Code
@@ -55,14 +50,19 @@ jobs:
       with:
         dotnet-version: '10.0.x'
 
-    # 安装 Linux x64 AOT 必需的 C++ 依赖
     - name: Install Linux x64 AOT Dependencies
       if: matrix.rid == 'linux-x64'
       run: |
         sudo apt-get update
         sudo apt-get install -y clang zlib1g-dev
 
-    # 安装 Linux ARM64 交叉编译 AOT 必需的 C++ 工具链
+    - name: Install Linux ARM32 Cross-Compiler
+      if: matrix.rid == 'linux-arm'
+      run: |
+        sudo dpkg --add-architecture armhf
+        sudo apt-get update
+        sudo apt-get install -y clang llvm gcc-arm-linux-gnueabihf zlib1g-dev:armhf
+
     - name: Install Linux ARM64 Cross-Compiler
       if: matrix.rid == 'linux-arm64'
       run: |
@@ -71,7 +71,6 @@ jobs:
         sudo apt-get install -y clang llvm gcc-aarch64-linux-gnu zlib1g-dev:arm64
 
     - name: Publish .NET AOT Project
-      # 保持 AOT 开启，并针对特定平台构建
       run: dotnet publish -c Release -r ${{ matrix.rid }} -p:PublishAot=true -o ./publish_output/${{ matrix.rid }}
 
     - name: Compress Release Files (Zip for Windows)
