@@ -1,7 +1,7 @@
-name: Qwen AOT Build
+name: QwenUpx AOT Build
 
 on:
-  workflow_dispatch: # 允许手动点击运行
+  workflow_dispatch:
   push:
     branches: ["master"]
     tags: ["v*"]
@@ -16,52 +16,63 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # --- Windows (全架构) ---
-          - { rid: win-x64, os: windows-latest, ext: zip }
-          - { rid: win-x86, os: windows-latest, ext: zip }
-          - { rid: win-arm64, os: windows-latest, ext: zip }
-          
-          # --- Linux (x64 和 原生 ARM64 服务器) ---
-          - { rid: linux-x64, os: ubuntu-latest, ext: tar.gz }
-          - { rid: linux-arm64, os: ubuntu-24.04-arm, ext: tar.gz } # <- 核心秘籍：调用纯 ARM 服务器！
-          
-          # --- macOS (修复 13 报错，统一用 latest) ---
-          - { rid: osx-x64, os: macos-latest, ext: tar.gz }
-          - { rid: osx-arm64, os: macos-latest, ext: tar.gz }
+          - { rid: win-x64, os: windows-latest, ext: zip, exe: QwenCli.exe }
+          - { rid: win-x86, os: windows-latest, ext: zip, exe: QwenCli.exe }
+          - { rid: win-arm64, os: windows-latest, ext: zip, exe: QwenCli.exe }
+          - { rid: linux-x64, os: ubuntu-latest, ext: tar.gz, exe: QwenCli }
+          - { rid: linux-arm64, os: ubuntu-24.04-arm, ext: tar.gz, exe: QwenCli }
+          - { rid: osx-x64, os: macos-latest, ext: tar.gz, exe: QwenCli }
+          - { rid: osx-arm64, os: macos-latest, ext: tar.gz, exe: QwenCli }
 
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-dotnet@v4
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '10.0.x'
 
-      # Linux x64 环境准备
-      - name: Install Linux x64 Env
-        if: matrix.rid == 'linux-x64'
-        run: sudo apt-get update && sudo apt-get install -y clang zlib1g-dev
+      # 环境准备
+      - name: Install Linux Dependencies
+        if: startsWith(matrix.rid, 'linux')
+        run: sudo apt-get update && sudo apt-get install -y clang zlib1g-dev build-essential
 
-      # Linux ARM64 环境准备 (因为是原生 ARM 服务器，直接装普通包即可)
-      - name: Install Linux arm64 Env
-        if: matrix.rid == 'linux-arm64'
-        run: sudo apt-get update && sudo apt-get install -y clang zlib1g-dev
-
+      # 1. 编译 AOT
       - name: Build AOT
-        run: dotnet publish -c Release -r ${{ matrix.rid }} -p:PublishAot=true -o ./out/${{ matrix.rid }}
+        run: >
+          dotnet publish -c Release 
+          -r ${{ matrix.rid }} 
+          -p:PublishAot=true 
+          -p:StripSymbols=true 
+          -o ./out/${{ matrix.rid }}
 
-      - name: Zip for Windows
-        if: matrix.ext == 'zip'
-        shell: bash
-        run: cd ./out/${{ matrix.rid }} && tar -a -c -f ../../QwenCli_${{ matrix.rid }}.zip *
-        
-      - name: Tar for Unix
-        if: matrix.ext == 'tar.gz'
-        shell: bash
-        run: cd ./out/${{ matrix.rid }} && tar -czvf ../../QwenCli_${{ matrix.rid }}.tar.gz *
-
-      - name: Upload
-        uses: softprops/action-gh-release@v2
+      # 2. 只有特定平台走 UPX (x64 系统最稳定)
+      - name: Compress with UPX (Select Platforms)
+        uses: svenstaro/upx-action@v2
+        if: matrix.rid == 'win-x64' || matrix.rid == 'linux-x64'
         with:
-          tag_name: latest # 强行指定版本号为 latest
-          name: "最新自动构建版" # 自动生成的标题
+          files: ./out/${{ matrix.rid }}/${{ matrix.exe }}
+          args: -9
+          strip: false 
+
+      # 3. 使用系统自带命令打包 (GitHub 运行环境内置支持)
+      - name: Create Archive
+        shell: bash
+        run: |
+          cd ./out/${{ matrix.rid }}
+          if [ "${{ matrix.ext }}" == "zip" ]; then
+            # Windows 也会内置 tar 命令，可以用来创建 zip
+            tar -a -c -f ../../QwenCli_${{ matrix.rid }}.zip *
+          else
+            # Linux 和 macOS 使用标准 tar.gz，保留执行权限
+            tar -czvf ../../QwenCli_${{ matrix.rid }}.tar.gz *
+          fi
+
+      # 4. 上传到 Release
+      - name: Upload to Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
+        with:
+          tag_name: latest
+          name: "Latest Build"
           files: QwenCli_${{ matrix.rid }}.${{ matrix.ext }}
