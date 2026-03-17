@@ -1,6 +1,4 @@
-# <img width="48" height="48" alt="141221163" src="https://github.com/user-attachments/assets/d264d87c-a965-4817-a103-0e523aac321f" />
- QwenCLI - 智能运维自动化 Agent
-
+# <div align="left" style="display: flex; align-items: center; line-height: 1.2;"> <img src="./141221163.png" width="32" height="32" style="margin-right: 15px;"> <span style="font-size: 32px; font-weight: bold;">QwenCLI - 智能运维自动化 Agent</span> </div>
 <div align="center">
 
 ![.NET](https://img.shields.io/badge/.NET-10.0-512BD4?style=flat-square&logo=dotnet)
