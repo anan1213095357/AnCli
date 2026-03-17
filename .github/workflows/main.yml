@@ -32,59 +32,43 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
-      # 环境准备
+      # Linux 环境必须的 AOT 依赖
       - name: Install Linux Dependencies
         if: startsWith(matrix.rid, 'linux')
-        run: sudo apt-get update && sudo apt-get install -y clang zlib1g-dev build-essential
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang zlib1g-dev build-essential
 
-      # 1. 编译 AOT (输出到 publish_raw 文件夹)
+      # 1. 编译 AOT (去掉所有 UPX 干扰，直接输出)
       - name: Build AOT
         run: >
           dotnet publish -c Release 
           -r ${{ matrix.rid }} 
           -p:PublishAot=true 
           -p:StripSymbols=true 
-          -o ./publish_raw
+          -o ./publish_dir
 
-      # 2. 关键修复：暴力搜索并对齐文件名
-      # 不管文件在哪个子目录，不管它叫 QwenCli 还是 qwencli，通通搜出来改名为统一的名字
-      - name: Locate and Fix Binary
+      # 2. 自动打包 (采用 GitHub 内置的 tar，避开大小写和路径坑)
+      - name: Packaging
         shell: bash
         run: |
-          mkdir -p ./final_out
-          # 在编译输出目录中搜索可执行文件
-          # 排除 pdb, json, dbg 等杂项文件，只抓取二进制主体
-          find ./publish_raw -type f ! -name "*.pdb" ! -name "*.json" ! -name "*.dbg" ! -name "*.xml" -exec cp {} ./final_out/${{ matrix.exe }} \;
-          echo "确认搜索到的文件内容："
-          ls -lh ./final_out/
-
-      # 3. UPX 压缩 (只针对 x64)
-      # 现在路径统一成了 ./final_out/文件名，UPX 绝对不会再丢了
-      - name: Compress with UPX
-        uses: svenstaro/upx-action@v2
-        if: matrix.rid == 'win-x64' || matrix.rid == 'linux-x64'
-        with:
-          files: ./final_out/${{ matrix.exe }}
-          args: -9
-          strip: false 
-
-      # 4. 打包输出
-      - name: Create Archive
-        shell: bash
-        run: |
-          cd ./final_out
-          # Linux/macOS 赋予执行权限
+          # 进入输出目录，确保包内没有多余的层级
+          cd ./publish_dir
+          
+          # 给 Unix 系列系统（Linux/macOS）的文件加执行权限
           if [[ "${{ matrix.os }}" != "windows-latest" ]]; then
             chmod +x *
           fi
           
           if [ "${{ matrix.ext }}" == "zip" ]; then
+            # Windows/Zip: 使用内置 tar 创建 zip
             tar -a -c -f ../QwenCli_${{ matrix.rid }}.zip *
           else
+            # Unix/Tar.gz: 创建压缩包并保留权限
             tar -czvf ../QwenCli_${{ matrix.rid }}.tar.gz *
           fi
 
-      # 5. 上传
+      # 3. 发布到 Release
       - name: Upload
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
@@ -92,3 +76,4 @@ jobs:
           tag_name: latest
           name: "Latest Build"
           files: QwenCli_${{ matrix.rid }}.${{ matrix.ext }}
+          generate_release_notes: true
