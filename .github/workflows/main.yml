@@ -1,4 +1,4 @@
-name: QwenUpx AOT Build
+name: QwenCli AOT Build
 
 on:
   workflow_dispatch:
