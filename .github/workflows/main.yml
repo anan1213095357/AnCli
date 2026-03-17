@@ -32,7 +32,7 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
-      # 环境准备：Linux AOT 必须安装 clang 和 build-essential
+      # 环境准备
       - name: Install Linux Dependencies
         if: startsWith(matrix.rid, 'linux')
         run: |
@@ -46,49 +46,51 @@ jobs:
           -r ${{ matrix.rid }} 
           -p:PublishAot=true 
           -p:StripSymbols=true 
-          -o ./out/${{ matrix.rid }}
+          -o ./publish_out
 
-      # 2. 调试步骤：如果 UPX 报错，请看这里的输出，确认文件名是否正确
-      - name: Check Files Location
+      # 2. 核心修复：自动定位并移动文件
+      # 无论 dotnet 把文件放在 ./publish_out 还是 ./publish_out/publish
+      # 我们都把它统一挪到根目录下的 ./release_dist
+      - name: Prepare Binary
         shell: bash
         run: |
-          echo "Checking directory: ./out/${{ matrix.rid }}"
-          ls -R ./out/${{ matrix.rid }}
+          mkdir -p ./release_dist
+          # 查找生成的可执行文件（排除 .pdb, .dbg 等杂质）
+          find ./publish_out -type f \( -name "${{ matrix.exe }}" -o -name "${{ matrix.exe }}*" \) -not -name "*.pdb" -not -name "*.dbg" -exec cp {} ./release_dist/ \;
+          echo "Files in release_dist:"
+          ls ./release_dist/
 
-      # 3. 只有 x64 平台尝试 UPX 压缩
+      # 3. 只有特定平台走 UPX
       - name: Compress with UPX
         uses: svenstaro/upx-action@v2
         if: matrix.rid == 'win-x64' || matrix.rid == 'linux-x64'
         with:
-          # 使用通配符匹配，解决路径不确定的问题
-          files: out/${{ matrix.rid }}/${{ matrix.exe }}
+          # 直接指向我们准备好的 release_dist 目录
+          files: release_dist/${{ matrix.exe }}
           args: -9
           strip: false 
 
-      # 4. 全平台通用的 Archive 打包
+      # 4. 统一打包
       - name: Create Archive
         shell: bash
         run: |
-          cd ./out/${{ matrix.rid }}
-          # 确保在 Linux/macOS 下二进制文件有执行权限
+          cd ./release_dist
+          # 给 Unix 系统加权限
           if [[ "${{ matrix.os }}" != "windows-latest" ]]; then
-            chmod +x ${{ matrix.exe }}
+            chmod +x *
           fi
           
           if [ "${{ matrix.ext }}" == "zip" ]; then
-            # Windows 环境下 tar 也可以生成 zip
-            tar -a -c -f ../../QwenCli_${{ matrix.rid }}.zip *
+            tar -a -c -f ../QwenCli_${{ matrix.rid }}.zip *
           else
-            # Unix 环境生成 tar.gz
-            tar -czvf ../../QwenCli_${{ matrix.rid }}.tar.gz *
+            tar -czvf ../QwenCli_${{ matrix.rid }}.tar.gz *
           fi
 
-      # 5. 上传到 Release
-      - name: Upload to Release
+      # 5. 上传
+      - name: Upload
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
         with:
           tag_name: latest
           name: "Latest Build"
           files: QwenCli_${{ matrix.rid }}.${{ matrix.ext }}
-          generate_release_notes: true
