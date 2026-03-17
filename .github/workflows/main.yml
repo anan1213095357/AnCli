@@ -32,10 +32,12 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
-      # 环境准备
+      # 环境准备：Linux AOT 必须安装 clang 和 build-essential
       - name: Install Linux Dependencies
         if: startsWith(matrix.rid, 'linux')
-        run: sudo apt-get update && sudo apt-get install -y clang zlib1g-dev build-essential
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang zlib1g-dev build-essential
 
       # 1. 编译 AOT
       - name: Build AOT
@@ -46,29 +48,42 @@ jobs:
           -p:StripSymbols=true 
           -o ./out/${{ matrix.rid }}
 
-      # 2. 只有特定平台走 UPX (x64 系统最稳定)
-      - name: Compress with UPX (Select Platforms)
+      # 2. 调试步骤：如果 UPX 报错，请看这里的输出，确认文件名是否正确
+      - name: Check Files Location
+        shell: bash
+        run: |
+          echo "Checking directory: ./out/${{ matrix.rid }}"
+          ls -R ./out/${{ matrix.rid }}
+
+      # 3. 只有 x64 平台尝试 UPX 压缩
+      - name: Compress with UPX
         uses: svenstaro/upx-action@v2
         if: matrix.rid == 'win-x64' || matrix.rid == 'linux-x64'
         with:
-          files: ./out/${{ matrix.rid }}/${{ matrix.exe }}
+          # 使用通配符匹配，解决路径不确定的问题
+          files: out/${{ matrix.rid }}/${{ matrix.exe }}
           args: -9
           strip: false 
 
-      # 3. 使用系统自带命令打包 (GitHub 运行环境内置支持)
+      # 4. 全平台通用的 Archive 打包
       - name: Create Archive
         shell: bash
         run: |
           cd ./out/${{ matrix.rid }}
+          # 确保在 Linux/macOS 下二进制文件有执行权限
+          if [[ "${{ matrix.os }}" != "windows-latest" ]]; then
+            chmod +x ${{ matrix.exe }}
+          fi
+          
           if [ "${{ matrix.ext }}" == "zip" ]; then
-            # Windows 也会内置 tar 命令，可以用来创建 zip
+            # Windows 环境下 tar 也可以生成 zip
             tar -a -c -f ../../QwenCli_${{ matrix.rid }}.zip *
           else
-            # Linux 和 macOS 使用标准 tar.gz，保留执行权限
+            # Unix 环境生成 tar.gz
             tar -czvf ../../QwenCli_${{ matrix.rid }}.tar.gz *
           fi
 
-      # 4. 上传到 Release
+      # 5. 上传到 Release
       - name: Upload to Release
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'workflow_dispatch'
@@ -76,3 +91,4 @@ jobs:
           tag_name: latest
           name: "Latest Build"
           files: QwenCli_${{ matrix.rid }}.${{ matrix.ext }}
+          generate_release_notes: true
