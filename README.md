@@ -1,4 +1,5 @@
-# 🤖 QwenCLI - 智能运维自动化 Agent
+# <img width="48" height="48" alt="141221163" src="https://github.com/user-attachments/assets/d264d87c-a965-4817-a103-0e523aac321f" />
+ QwenCLI - 智能运维自动化 Agent
 
 <div align="center">
 
