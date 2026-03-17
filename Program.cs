@@ -5,7 +5,6 @@ using System.Net.Http.Headers;        // 提供处理 HTTP 请求头的功能（
 using System.Runtime.InteropServices; // 提供获取系统信息的功能（判断是Windows还是Linux/Mac）
 using System.Text;                    // 提供文本编码功能（处理UTF-8、GBK等）
 using System.Text.Json.Nodes;         // 提供轻量级的 JSON 解析和构建功能
-
 // ==========================================
 // 1. 配置与初始化阶段
 // ==========================================
@@ -28,6 +27,30 @@ string GetConfig(string key, string def = "")
 
     // 都找不到，返回默认值
     return def;
+}
+
+// 🌟【新增功能：自动生成默认配置文件】🌟
+if (!File.Exists("appsettings.json"))
+{
+    var defaultConfig = new JsonObject
+    {
+        ["ApiKey"] = "your_api_key_here",
+        ["Model"] = "qwen3.5-plus",
+        ["Endpoint"] = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
+    };
+
+    // 设置 JSON 序列化选项，使输出带有缩进，方便阅读和修改
+    var options = new System.Text.Json.JsonSerializerOptions { WriteIndented = true };
+    File.WriteAllText("appsettings.json", defaultConfig.ToJsonString(options), Encoding.UTF8);
+
+    Console.ForegroundColor = ConsoleColor.Yellow;
+    Console.WriteLine("检测到缺少配置文件，已自动在当前目录生成默认的 appsettings.json 文件。");
+    Console.WriteLine("请打开网址 https://bailian.console.aliyun.com/cn-beijing?tab=model#/api-key 申请千问大模型，Ctrl + 鼠标左键打开！");
+    Console.WriteLine("请打开该文件，将 'your_api_key_here' 替换为您真实的 千问ApiKey，然后重新运行本程序。");
+    Console.ReadKey();
+    Console.ResetColor();
+
+    return; // 终止当前运行，等待用户填写配置
 }
 
 // 定义 Agent 能够使用的5个核心工具（以 JSON 数组格式定义给 AI 大模型看，告诉它有哪些能力）
@@ -54,8 +77,9 @@ var apiKey = GetConfig("ApiKey");
 if (string.IsNullOrEmpty(apiKey) || apiKey.Contains("your"))
 {
     Console.ForegroundColor = ConsoleColor.Red;
-    Console.WriteLine("错误：未配置 API Key！请设置环境变量或修改 appsettings.json。");
+    Console.WriteLine("错误：未配置千问 API Key！请设置环境变量或修改 appsettings.json。");
     Console.ResetColor(); // 恢复默认颜色
+    Console.ReadKey();
     return; // 退出程序
 }
 
@@ -115,8 +139,8 @@ Console.WriteLine(@"
  \____/ |__/|__/\___/_/ /_/  \____/_____/___/    
 ");
 Console.ForegroundColor = ConsoleColor.DarkGray;
-Console.WriteLine("v1.5.0 | 千问跨平台运维工具 by 奶茶叔叔\n");
-
+Console.WriteLine("v1.5.0 | 千问跨平台运维工具 by 奶茶叔叔");
+Console.WriteLine("开源地址： https://github.com/anan1213095357/QwenCli \n");
 // 打印当前连接的模型名称
 Console.ForegroundColor = ConsoleColor.Green;
 Console.WriteLine($"终端运维 Agent 已接入系统。当前模型：[ {GetConfig("Model", "qwen3.5-plus")} ]");
