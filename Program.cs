@@ -187,8 +187,8 @@ while (true)
         payloadMessages.Add(new JsonObject { ["role"] = "system", ["content"] = systemPromptText });
 
         // 动态上下文加载
-        if (useFullContext) foreach (var msg in fullHistory) payloadMessages.Add(msg.DeepClone());
-        else foreach (var msg in currentRoundMessages) payloadMessages.Add(msg.DeepClone());
+        if (useFullContext) foreach (var m in fullHistory) payloadMessages.Add(m.DeepClone());
+        else foreach (var m in currentRoundMessages) payloadMessages.Add(m.DeepClone());
 
         var payload = new JsonObject
         {
