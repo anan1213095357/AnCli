@@ -12,14 +12,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 
-// ==========================================
-// 0. 环境初始化与路径修正 (解决 Mac 下双击运行找不到配置的问题)
-// ==========================================
 Directory.SetCurrentDirectory(AppContext.BaseDirectory);
-
-// ==========================================
-// 1. 配置与初始化阶段
-// ==========================================
 
 string GetConfig(string key, string def = "")
 {
@@ -76,17 +69,24 @@ Console.InputEncoding = Encoding.UTF8;
 var apiKey = GetConfig("ApiKey");
 if (string.IsNullOrEmpty(apiKey) || apiKey.Contains("your")) return;
 
-// 隐式读取密码
 Console.ForegroundColor = ConsoleColor.Cyan;
 Console.Write("请输入本机 Sudo/Admin 密码(用于全自动提权，无密码或不提供请直接回车): ");
 Console.ResetColor();
 string sudoPassword = ReadPasswordHidden();
 
-string sudoInstruction = string.IsNullOrEmpty(sudoPassword) 
-    ? "" 
-    : $"用户已授权 sudo 密码。如果遇到提权，请严格使用: echo '{sudoPassword.Replace("'", "'\\''")}' | sudo -S <命令> 。";
-
-// 记忆管理变量
+bool isWin = RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
+string sudoInstruction = "";
+if (!string.IsNullOrEmpty(sudoPassword))
+{
+    if (isWin)
+    {
+        sudoInstruction = $"用户已提供管理员密码：'{sudoPassword}'。如果遇到权限拒绝，请使用 PowerShell 的 PSCredential 结合 Start-Process -Verb RunAs 尝试执行，或者直接提示用户关闭控制台，以【管理员身份运行】重新打开本程序。千万不要使用 sudo 命令。";
+    }
+    else
+    {
+        sudoInstruction = $"用户已授权 sudo 密码。如果遇到提权(Permission denied)，请严格使用免交互管道模式: echo '{sudoPassword.Replace("'", "'\\''")}' | sudo -S <命令> 。";
+    }
+}
 string checkpointPath = "full_history.json";
 string summaryPath = "session_summary.txt";
 JsonArray fullHistory = new JsonArray();
@@ -124,10 +124,6 @@ if (File.Exists(checkpointPath))
 using var client = new HttpClient();
 client.Timeout = TimeSpan.FromMinutes(10);
 client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
-
-// ==========================================
-// 2. 界面与交互逻辑
-// ==========================================
 
 async Task Think(CancellationToken ct)
 {
@@ -306,10 +302,6 @@ while (true)
         Console.ResetColor();
     }
 }
-
-// ==========================================
-// 3. 辅助方法与底层工具
-// ==========================================
 
 void SaveData(JsonArray data, string path)
 {
