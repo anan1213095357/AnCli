@@ -11,9 +11,7 @@ using System.Text.RegularExpressions;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
-
 Directory.SetCurrentDirectory(AppContext.BaseDirectory);
-
 string GetConfig(string key, string def = "")
 {
     var envValue = Environment.GetEnvironmentVariable(key);
@@ -27,7 +25,6 @@ string GetConfig(string key, string def = "")
     }
     return def;
 }
-
 if (!File.Exists("appsettings.json"))
 {
     var defaultConfig = new JsonObject
@@ -47,8 +44,6 @@ if (!File.Exists("appsettings.json"))
     Console.ResetColor();
     return;
 }
-
-// 包含所有 7 个核心工具的定义
 var tools = JsonNode.Parse("""
 [
     { "type": "function", "function": { "name": "execute_command", "description": "执行终端命令", "parameters": { "type": "object", "properties": { "command": { "type": "string" } }, "required": ["command"] } } },
@@ -61,15 +56,11 @@ var tools = JsonNode.Parse("""
     { "type": "function", "function": { "name": "finish_task", "description": "当用户的最终目标已彻底完成时调用此工具。这会预约清空当前的上下文记忆和任务摘要，确保下一次接收新任务时处于干净的状态。", "parameters": { "type": "object", "properties": {} } } }
 ]
 """);
-
 Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
 Console.OutputEncoding = Encoding.UTF8;
 Console.InputEncoding = Encoding.UTF8;
-
 var apiKey = GetConfig("ApiKey");
 if (string.IsNullOrEmpty(apiKey) || apiKey.Contains("your")) return;
-
-
 Console.Clear();
 Console.ForegroundColor = ConsoleColor.Cyan;
 Console.WriteLine(@"
@@ -91,7 +82,6 @@ Console.ForegroundColor = ConsoleColor.Cyan;
 Console.Write("请输入本机 Sudo/Admin 密码(用于全自动，无密码或不提供请直接回车): ");
 Console.ResetColor();
 string sudoPassword = ReadPasswordHidden();
-
 bool isWin = RuntimeInformation.IsOSPlatform(OSPlatform.Windows);
 string sudoInstruction = "";
 if (!string.IsNullOrEmpty(sudoPassword))
@@ -109,10 +99,7 @@ string checkpointPath = "full_history.json";
 string summaryPath = "session_summary.txt";
 JsonArray fullHistory = new JsonArray();
 string currentSummary = "暂无任务进展";
-
-// 恢复记忆逻辑
 if (File.Exists(summaryPath)) currentSummary = File.ReadAllText(summaryPath, Encoding.UTF8);
-
 if (File.Exists(checkpointPath))
 {
     Console.ForegroundColor = ConsoleColor.Yellow;
@@ -120,7 +107,6 @@ if (File.Exists(checkpointPath))
     var key = Console.ReadKey().Key;
     Console.WriteLine();
     Console.ResetColor();
-
     if (key == ConsoleKey.Y)
     {
         try
@@ -138,11 +124,9 @@ if (File.Exists(checkpointPath))
         currentSummary = "暂无任务进展";
     }
 }
-
 using var client = new HttpClient();
 client.Timeout = TimeSpan.FromMinutes(10);
 client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
-
 async Task Think(CancellationToken ct)
 {
     Console.ForegroundColor = ConsoleColor.Cyan;
@@ -156,12 +140,6 @@ async Task Think(CancellationToken ct)
     Console.ResetColor();
     Console.CursorVisible = true;
 }
-
-Console.Clear();
-Console.ForegroundColor = ConsoleColor.DarkGray;
-Console.WriteLine("v3.0.0 | 千问跨平台终极运维 Agent by 奶茶叔叔\n");
-Console.ResetColor();
-
 while (true)
 {
     Console.Write("\n> ");
@@ -193,17 +171,12 @@ while (true)
 1. 如果你发现依据摘要不足以写出代码或执行命令，请立即调用 `require_full_context` 工具获取完整记录。
 2. 每完成一个阶段性任务，务必调用 `update_summary` 将当前步骤追加到进展日志中！
 🚨 3. 当判定用户交代的所有目标均已彻底完成时，必须且只能调用 `finish_task` 工具来清理环境，然后向用户做最后的结果汇报。🚨
-
 【当前任务进展日志】：
 {currentSummary}";
-
         var payloadMessages = new JsonArray();
         payloadMessages.Add(new JsonObject { ["role"] = "system", ["content"] = systemPromptText });
-
-        // 动态上下文加载
         if (useFullContext) foreach (var m in fullHistory) payloadMessages.Add(m.DeepClone());
         else foreach (var m in currentRoundMessages) payloadMessages.Add(m.DeepClone());
-
         var payload = new JsonObject
         {
             ["model"] = GetConfig("Model", "qwen3.5-plus"),
@@ -211,24 +184,18 @@ while (true)
             ["tools"] = tools!.DeepClone(),
             ["enable_search"] = true
         };
-
         var endpoint = GetConfig("Endpoint", "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions");
         var content = new StringContent(payload.ToJsonString(), Encoding.UTF8, "application/json");
         HttpResponseMessage res;
-        
         try { res = await client.PostAsync(endpoint, content); }
         catch(Exception ex) { cts.Cancel(); await animTask; Console.WriteLine($"\n[网络错误] 请求 API 失败: {ex.Message}"); break; }
-
         var responseString = await res.Content.ReadAsStringAsync();
         var msg = JsonNode.Parse(responseString)?["choices"]?[0]?["message"];
-
         cts.Cancel(); await animTask;
         if (msg == null) break;
-
         currentRoundMessages.Add(msg.DeepClone());
         fullHistory.Add(msg.DeepClone());
         SaveData(fullHistory, checkpointPath);
-
         var toolCalls = msg["tool_calls"]?.AsArray();
         if (toolCalls != null && toolCalls.Count > 0)
         {
@@ -236,14 +203,10 @@ while (true)
             {
                 var fnName = call["function"]?["name"]?.ToString() ?? "";
                 var tempArgs = JsonNode.Parse(call["function"]?["arguments"]?.ToString() ?? "{}");
-
                 Console.ForegroundColor = ConsoleColor.Yellow;
                 Console.WriteLine($"\n[Agent 正在调用]: {fnName}");
                 Console.ResetColor();
-
                 string result = "";
-                
-                // 处理特殊记忆与生命周期工具
                 if (fnName == "finish_task")
                 {
                     requireReset = true; 
@@ -284,7 +247,6 @@ while (true)
                         _ => "[未知工具] 不支持"
                     };
                 }
-
                 var toolResultMsg = new JsonObject
                 {
                     ["role"] = "tool",
@@ -292,7 +254,6 @@ while (true)
                     ["content"] = result,
                     ["tool_call_id"] = call["id"]?.ToString()
                 };
-
                 currentRoundMessages.Add(toolResultMsg.DeepClone());
                 fullHistory.Add(toolResultMsg.DeepClone());
                 SaveData(fullHistory, checkpointPath); 
@@ -306,26 +267,21 @@ while (true)
             isDone = true; 
         }
     }
-
-    // 物理清理：如果 Agent 判定任务结束，在这轮彻底清空硬盘和内存里的状态
     if (requireReset)
     {
         fullHistory.Clear();
         if (File.Exists(checkpointPath)) File.Delete(checkpointPath); 
         if (File.Exists(summaryPath)) File.Delete(summaryPath);       
         currentSummary = "暂无任务进展";
-        
         Console.ForegroundColor = ConsoleColor.Green;
         Console.WriteLine("\n✅ [生命周期] 本次任务上下文已全自动清理！Agent 已就绪，随时接收新任务。");
         Console.ResetColor();
     }
 }
-
 void SaveData(JsonArray data, string path)
 {
     try { File.WriteAllText(path, data.ToJsonString(new JsonSerializerOptions { WriteIndented = true }), Encoding.UTF8); } catch { }
 }
-
 string ReadPasswordHidden()
 {
     var pwd = new StringBuilder();
@@ -342,7 +298,6 @@ string ReadPasswordHidden()
     Console.WriteLine();
     return pwd.ToString();
 }
-
 string RunCmd(string? cmd)
 {
     if (string.IsNullOrEmpty(cmd)) return "[执行失败] 命令为空";
@@ -422,14 +377,12 @@ string RunCmd(string? cmd)
     }
     return finalOut;
 }
-
 string ReadFile(string? path)
 {
     Console.ForegroundColor = ConsoleColor.DarkGray; Console.WriteLine($"[读取文件] {path}"); Console.ResetColor();
     if (path == null || !File.Exists(path)) return "[文件不存在]";
     return ReadTextSmart(path, out _);
 }
-
 string WriteFile(string? path, string? content, string? oldContent = null)
 {
     if (path == null) return "[写入失败] 路径为空";
@@ -457,14 +410,12 @@ string WriteFile(string? path, string? content, string? oldContent = null)
     }
     catch (Exception ex) { return $"[写入/修改失败] {ex.Message}"; }
 }
-
 string ReadTextSmart(string path, out Encoding detectedEncoding)
 {
     byte[] bytes = File.ReadAllBytes(path);
     try { detectedEncoding = new UTF8Encoding(false, true); return detectedEncoding.GetString(bytes); }
     catch { detectedEncoding = Encoding.GetEncoding("GBK"); return detectedEncoding.GetString(bytes); }
 }
-
 string ReadImg(string? path)
 {
     Console.ForegroundColor = ConsoleColor.DarkGray; Console.WriteLine($"[读取图片] {path}"); Console.ResetColor();
@@ -477,7 +428,6 @@ string ReadImg(string? path)
     }
     catch (Exception ex) { return $"[读取失败] {ex.Message}"; }
 }
-
 string SearchContent(string? dir, string? keyword, string? pattern)
 {
     dir = string.IsNullOrEmpty(dir) ? "." : dir; pattern = string.IsNullOrEmpty(pattern) ? "*.*" : pattern;
@@ -505,7 +455,6 @@ string SearchContent(string? dir, string? keyword, string? pattern)
     }
     catch (Exception ex) { return $"[异常] {ex.Message}"; }
 }
-
 public class UniversalLogCompressor
 {
     public static List<string> CompressLogs(IEnumerable<string> rawLogs)
