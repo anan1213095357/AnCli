@@ -52,7 +52,21 @@ var tools = JsonNode.Parse("""
     { "type": "function", "function": { "name": "write_file", "description": "写文件或局部修改文件。局部修改必须提供 old_content。", "parameters": { "type": "object", "properties": { "file_path": { "type": "string" }, "content": { "type": "string" }, "old_content": { "type": "string" } }, "required": ["file_path", "content"] } } },
     { "type": "function", "function": { "name": "read_local_image", "description": "看图", "parameters": { "type": "object", "properties": { "file_path": { "type": "string" } }, "required": ["file_path"] } } },
     { "type": "function", "function": { "name": "search_content", "description": "全局搜索关键字。", "parameters": { "type": "object", "properties": { "keyword": { "type": "string" }, "directory": { "type": "string" }, "file_pattern": { "type": "string" } }, "required": ["keyword"] } } },
-    { "type": "function", "function": { "name": "update_summary", "description": "覆写当前任务的全局摘要。每当解决阶段性问题，务必调用此工具将最新进度和接下来的计划写入摘要。", "parameters": { "type": "object", "properties": { "new_summary": { "type": "string" } }, "required": ["new_summary"] } } },
+    { 
+        "type": "function", 
+        "function": { 
+            "name": "update_summary", 
+            "description": "追加阶段任务摘要（作为索引目录）。务必总结本阶段完成了什么，并附上对应的【日志文件路径】。当你未来丢失上下文时，将通过读取此摘要中的路径来找回执行细节。", 
+            "parameters": { 
+                "type": "object", 
+                "properties": { 
+                    "step_summary": { "type": "string", "description": "本阶段的精简总结和下一步计划" }, 
+                    "log_file_path": { "type": "string", "description": "本阶段对应的详细日志文件路径（如果有的话）" } 
+                }, 
+                "required": ["step_summary"] 
+            } 
+        } 
+    }
     { "type": "function", "function": { "name": "require_full_context", "description": "请求完整历史记录。如果你发现当前的摘要信息不足以支撑推理，调用此工具。", "parameters": { "type": "object", "properties": {} } } },
     { "type": "function", "function": { "name": "finish_task", "description": "当用户的最终目标已彻底完成时调用此工具。这会预约清空当前的上下文记忆和任务摘要，确保下一次接收新任务时处于干净的状态。", "parameters": { "type": "object", "properties": {} } } }
 ]
@@ -197,13 +211,16 @@ while (true)
         using var cts = new CancellationTokenSource();
         var animTask = Think(cts.Token);
         string systemPromptText = $@"你是一个高级运维自动化 Agent。当前系统：{RuntimeInformation.OSDescription}。
-{sudoInstruction}
-【记忆管理规则】：你目前处于【摘要驱动模式】。为节省Token，你默认只能看到下方的【当前任务摘要】和用户的【最新指令】。
-1. 如果你发现依据摘要不足以写出代码或执行命令，请立即调用 `require_full_context` 工具获取完整记录。
-2. 每完成一个阶段性任务，务必调用 `update_summary` 将当前步骤追加到进展日志中！
-🚨 3. 当判定用户交代的所有目标均已彻底完成时，必须且只能调用 `finish_task` 工具来清理环境，然后向用户做最后的结果汇报。🚨
-【当前任务进展日志】：
-{currentSummary}";
+        {sudoInstruction}
+        【记忆管理架构：摘要即索引】：
+        1. 为节省Token，你的短时记忆有限。你主要依赖下方的【当前任务摘要】作为你的全局状态机和历史目录。
+        2. 当你调用 execute_command 产生输出时，必须调用 update_summary，将操作结果总结成一句话，并将那个【日志文件路径】存入摘要中。
+        3. 如果在后续推理中，你发现摘要里的信息不足以让你继续（比如你需要查看前几步的具体报错代码），请优先使用 read_file 工具去读取摘要里记录的那个具体日志文件！
+        4. 只有当摘要也丢失时，才允许调用 require_full_context。
+        5. 当任务彻底完成时调用 finish_task 清理环境。
+        
+        【当前任务摘要（历史目录）】：
+        {currentSummary}";
 
         var payloadMessages = new JsonArray();
         payloadMessages.Add(new JsonObject { ["role"] = "system", ["content"] = systemPromptText });
@@ -257,14 +274,18 @@ while (true)
                 }
                 else if (fnName == "update_summary")
                 {
-                    string newStep = tempArgs?["new_summary"]?.ToString() ?? ""; 
+                    string newStep = tempArgs?["step_summary"]?.ToString() ?? "";
+                    string logRef = tempArgs?["log_file_path"]?.ToString() ?? "";
                     if (currentSummary == "暂无任务进展") currentSummary = "";
-                    string timestamp = DateTime.Now.ToString("HH:mm:ss");
-                    currentSummary += $"\n[{timestamp}] - {newStep}";
+                    string timestamp = DateTime.Now.ToString("MM-dd HH:mm:ss");
+                    string indexEntry = $"\n[{timestamp}] {newStep}";
+                    if (!string.IsNullOrEmpty(logRef))
+                       indexEntry += $"\n  └─ 关联日志: {logRef}";
+                    currentSummary += indexEntry;
                     File.WriteAllText(summaryPath, currentSummary, Encoding.UTF8);
-                    result = "[系统提示] 最新进度已成功追加到进展日志中。";
+                    result = "[系统提示] 摘要索引已更新。未来你随时可以读取摘要中的 log 路径来获取细节。";
                     Console.ForegroundColor = ConsoleColor.Magenta;
-                    Console.WriteLine($"[内部状态] 进度已追加: [{timestamp}] {newStep}");
+                    Console.WriteLine($"[内部状态] 索引已建立: [{timestamp}] {newStep} {(string.IsNullOrEmpty(logRef) ? "" : $"(日志: {logRef})")}");
                     Console.ResetColor();
                 }
                 else if (fnName == "require_full_context")
